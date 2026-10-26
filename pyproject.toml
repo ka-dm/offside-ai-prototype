@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "offside-ai"
+version = "0.1.0"
+description = "Semi-automated football offside detector (student research prototype)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "offside-ai-prototype contributors" }]
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.11",
+  "librosa>=0.10",
+  "soundfile>=0.12",
+  "matplotlib>=3.8",
+  "opencv-python-headless>=4.8",
+  "Pillow>=10.0",
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+  "pyyaml>=6.0",
+  "tqdm>=4.66",
+  "gradio>=4.0",
+]
+
+[project.optional-dependencies]
+detection = [
+  "torch>=2.1",
+  "torchvision>=0.16",
+  "transformers>=4.40",
+  "ultralytics>=8.0",
+  "rfdetr>=1.0.0; python_version>='3.10'",
+]
+pose = [
+  "torch>=2.1",
+  "transformers>=4.40",
+]
+dev = [
+  "pytest>=7.4",
+  "pytest-cov>=4.1",
+]
+colab = [
+  "torch",
+  "torchvision",
+  "transformers>=4.40",
+  "ultralytics>=8.0",
+]
+
+[project.scripts]
+offside-audio = "offside_ai.audio.cli:main"
+offside-detect = "offside_ai.detection.cli:main"
+offside-pitch = "offside_ai.pitch.cli:main"
+offside-pose = "offside_ai.pose.cli:main"
+offside-decide = "offside_ai.offside.cli:main"
+offside-eval = "offside_ai.eval.cli:main"
+offside-app = "offside_ai.app.gradio_app:main"
+offside-pipeline = "offside_ai.pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["offside_ai*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"

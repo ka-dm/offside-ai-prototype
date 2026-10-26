@@ -1,0 +1,65 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Local artifacts (plots, extracted audio, model caches)
+artifacts/
+outputs/
+runs/
+*.wav
+!eval/fixtures/**/*.wav
+*.mp4
+!eval/fixtures/**/*.mp4
+*.avi
+*.mkv
+*.mov
+!eval/fixtures/README.md
+
+# Model weights (do not commit large binaries)
+*.pt
+*.pth
+*.onnx
+*.engine
+weights/
+models/checkpoints/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Hugging Face / Gradio
+.cache/
+flagged/
+
+# Secrets
+secrets.json
+credentials.json
+*.pem
