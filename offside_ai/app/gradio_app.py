@@ -70,10 +70,10 @@ def _run(
 
 
 def build_app() -> gr.Blocks:
-    with gr.Blocks(title="Offside AI Prototype") as demo:
+    with gr.Blocks(title="OpenSAOT") as demo:
         gr.Markdown(
             """
-            # Offside AI — student research prototype
+            # OpenSAOT — Semiautomatic VAR
             Upload a **short** single-camera broadcast clip. The system estimates the
             pass/kick instant from **audio** (with optional visual fallback), then
             produces an offside verdict. Defaults use lightweight **mock** detectors

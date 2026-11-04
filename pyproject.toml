@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "offside-ai"
 version = "0.1.0"
-description = "Semi-automated football offside detector (student research prototype)"
+description = "OpenSAOT: semiautomatic VAR for football offside"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -57,6 +57,8 @@ offside-decide = "offside_ai.offside.cli:main"
 offside-eval = "offside_ai.eval.cli:main"
 offside-app = "offside_ai.app.gradio_app:main"
 offside-pipeline = "offside_ai.pipeline.cli:main"
+offside-soccernet = "offside_ai.data.soccernet:main"
+offside-studio = "offside_ai.app.studio:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

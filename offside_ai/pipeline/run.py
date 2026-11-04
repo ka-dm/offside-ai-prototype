@@ -30,7 +30,7 @@ from offside_ai.pose.keypoints import advanced_legal_point, create_pose_estimato
 
 @dataclass
 class PipelineConfig:
-    detector_backend: Literal["rfdetr", "yolo", "mock"] = "mock"
+    detector_backend: Literal["rfdetr", "yolo", "mock", "broadcast"] = "mock"
     pose_backend: Literal["vitpose", "mock", "sam3d"] = "mock"
     pitch_backend: Literal["mock", "hf", "manual"] = "mock"
     enable_sam3d: bool = False
@@ -223,3 +223,111 @@ def run_pipeline(video_path: str | Path, cfg: PipelineConfig | None = None) -> P
     )
     (out / "result.json").write_text(json.dumps(result.to_dict(), indent=2))
     return result
+
+
+def _norm_box(box, width: int, height: int, *, offside: bool = False) -> dict[str, Any]:
+    return {
+        "x1": round(float(box.x1) / width, 4),
+        "y1": round(float(box.y1) / height, 4),
+        "x2": round(float(box.x2) / width, 4),
+        "y2": round(float(box.y2) / height, 4),
+        "label": box.label,
+        "team": None if box.team_id is None else int(box.team_id),
+        "offside": offside,
+    }
+
+
+def describe_frame(
+    frame: np.ndarray,
+    frame_index: int,
+    fps: float,
+    cfg: PipelineConfig | None = None,
+) -> dict[str, Any]:
+    """Detections, teams, ball, referee and the offside line for one frame.
+
+    Coordinates in ``overlay`` are fractions of the frame, so the page can
+    draw them on top of the video without a second encode.
+    """
+    cfg = cfg or PipelineConfig()
+    height, width = frame.shape[:2]
+    detector = create_detector(cfg.detector_backend)
+    det_res = detect_frame(frame, detector=detector, frame_index=frame_index, fps=fps)
+    assign_teams_by_jersey_color(frame, det_res, manual_overrides=cfg.team_overrides).apply_to_result(
+        det_res
+    )
+    if cfg.manual_pitch_points:
+        homo = ManualPitchCalibrator().calibrate_named(cfg.manual_pitch_points)
+    else:
+        homo = create_pitch_detector(cfg.pitch_backend).estimate_homography(frame)
+    pose_est = create_pose_estimator(cfg.pose_backend, enable_sam3d=cfg.enable_sam3d)
+    poses = pose_est.estimate(frame, det_res.boxes)
+    direction = AttackingDirection.from_string(cfg.attacking_direction)
+    img_dir = "increasing" if direction is AttackingDirection.POSITIVE_X else "decreasing"
+    players: list[PlayerPoseOnPitch] = []
+    player_boxes = [b for b in det_res.boxes if b.label in {"player", "goalkeeper"}]
+    box_for_player: dict[int, Any] = {}
+    for i, pose in enumerate(poses):
+        box = pose.bbox or (player_boxes[i] if i < len(player_boxes) else None)
+        if box is None:
+            continue
+        adv_img = advanced_legal_point(pose, img_dir)
+        x_m, y_m = homo.image_to_pitch(adv_img.x, adv_img.y)
+        players.append(
+            PlayerPoseOnPitch(
+                player_id=i,
+                team_id=0 if box.team_id is None else int(box.team_id),
+                x=x_m,
+                y=y_m,
+                role="goalkeeper" if box.label == "goalkeeper" else "player",
+            )
+        )
+        box_for_player[i] = box
+    ball = det_res.ball()
+    ball_x = None
+    if ball is not None:
+        ball_x, _ = homo.image_to_pitch(ball.center.x, ball.center.y)
+    decision = None
+    line: list[list[float]] = []
+    attackers: set[int] = set()
+    if len(players) >= 2:
+        try:
+            decision = compute_offside(
+                players,
+                attacking_team_id=cfg.attacking_team_id,
+                attacking_direction=direction,
+                ball_x=ball_x,
+            )
+        except Exception:
+            decision = None
+    if decision is not None:
+        attackers = {
+            id(box_for_player[pid])
+            for pid in decision.offside_attacker_ids
+            if pid in box_for_player
+        }
+        for y_m in np.linspace(0.0, 68.0, 24):
+            u, v = homo.pitch_to_image(decision.offside_line_x, float(y_m))
+            line.append([round(u / width, 4), round(v / height, 4)])
+    overlay = {
+        "time_s": round(frame_index / fps, 3) if fps else 0.0,
+        "boxes": [
+            _norm_box(box, width, height, offside=id(box) in attackers)
+            for box in det_res.boxes
+        ],
+        "line": line,
+        "offside": bool(decision.is_offside) if decision is not None else False,
+    }
+    return {"decision": decision, "overlay": overlay}
+
+
+def judge_loaded_frame(
+    frame: np.ndarray,
+    frame_index: int,
+    fps: float,
+    cfg: PipelineConfig | None = None,
+) -> OffsideDecision:
+    """Offside verdict for one already-decoded frame. No audio."""
+    decision = describe_frame(frame, frame_index, fps, cfg)["decision"]
+    if decision is None:
+        raise RuntimeError("Not enough players to judge this frame")
+    return decision

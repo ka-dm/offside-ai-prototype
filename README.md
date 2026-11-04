@@ -1,6 +1,6 @@
-# Offside AI Prototype
+# OpenSAOT
 
-Semi-automated **football offside detector** for a university paper (due **13 Nov 2026**). Input: a short single-camera broadcast clip. Output: estimated **pass/kick instant** + **offside verdict** (line, margins, annotated frame). The paper compares this workflow to traditional VAR.
+Semiautomatic VAR. Semi-automated **football offside detector** for a university paper (due **13 Nov 2026**). Input: a short single-camera broadcast clip. Output: estimated **pass/kick instant** + **offside verdict** (line, margins, annotated frame). The paper compares this workflow to traditional VAR.
 
 **Novelty:** pass-time from **audio** (spectrogram + band-pass onset detection), with visual ball-motion cross-check and manual fallback when crowd noise makes audio unreliable.
 
@@ -75,6 +75,13 @@ offside-eval score artifacts/syn_eval/annotations.csv artifacts/syn_eval/predict
 
 Reports: pass-frame error (frames + ms), decision accuracy / precision / recall, margin error, error-source table. **Do not commit copyrighted footage.**
 
+Broadcast clips with audio (SoccerNet, one match, NDA): [`docs/soccernet.md`](docs/soccernet.md).
+
+```bash
+offside-soccernet cut --root artifacts/soccernet --out artifacts/soccernet/windows --max-events 12
+offside-soccernet contrast --annotations artifacts/soccernet/windows/annotations.csv --out artifacts/soccernet/contrast
+```
+
 ## What was verified vs not
 
 | Component | Status in this repo / CI |
@@ -88,6 +95,7 @@ Reports: pass-frame error (frames + ms), decision accuracy / precision / recall,
 | Pipeline wiring with **mock** backends | Implemented; run locally on any short clip with audio |
 | RF-DETR / YOLO / ViTPose **weight downloads** | **Not verified** in the cloud VM (no large weight pull) |
 | SAM 3D Body | Scaffold only (`--enable-sam3d`) |
+| SoccerNet window cut + audio/visual contrast | **Tested** on a synthetic match with Pass/Offside JSON. Real 720p download needs the NDA (`docs/soccernet.md`) |
 | Real broadcast accuracy | **Not measured** here — use `eval/` on your annotated set |
 
 Be honest in the paper: single-camera homography ≠ broadcast VAR multi-view triangulation; audio helps pass timing but fails under loud crowds.
@@ -108,7 +116,7 @@ Entrypoint: `app.py`. Space README template: `README_SPACE.md` (YAML frontmatter
 
 ## Español (breve)
 
-Prototipo de investigación: detecta el **momento del pase** sobre todo con **audio** (espectrograma + onsets) y calcula fuera de juego con homografía y puntos corporales legales (sin brazos). En Colab: abre el notebook, sube un clip corto, revisa primero la etapa de audio; si la confianza es baja, elige el frame a mano. No subas vídeo con copyright al repositorio.
+Prototipo de investigación: detecta el **momento del pase** sobre todo con **audio** (espectrograma + onsets) y calcula fuera de juego con homografía y puntos corporales legales (sin brazos). En Colab: abre el notebook, sube un clip corto, revisa primero la etapa de audio; si la confianza es baja, elige el frame a mano. Para clips de retransmisión con audio, SoccerNet (un partido, con NDA) y `offside-soccernet` están en `docs/soccernet.md`. No subas vídeo con copyright al repositorio.
 
 ## Citation / course use
 

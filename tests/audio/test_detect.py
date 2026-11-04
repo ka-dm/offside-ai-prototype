@@ -10,6 +10,7 @@ import soundfile as sf
 
 from offside_ai.audio.detect import (
     AudioPassConfig,
+    attenuate_sustained,
     bandpass_filter,
     detect_pass_from_audio,
     fuse_audio_visual,
@@ -41,6 +42,22 @@ def test_bandpass_attenuates_out_of_band():
     corr_mid = abs(np.corrcoef(filtered, mid)[0, 1])
     corr_low = abs(np.corrcoef(filtered, low)[0, 1])
     assert corr_mid > corr_low
+
+
+def test_chant_is_quieter_than_the_kick():
+    sr = 22050
+    t = np.arange(int(sr * 2.0)) / sr
+    chant = 0.4 * np.sin(2 * np.pi * 320 * t)
+    kick_t = 1.0
+    i0 = int(kick_t * sr)
+    burst = int(0.02 * sr)
+    tb = np.arange(burst) / sr
+    y = chant.copy()
+    y[i0 : i0 + burst] += 0.9 * np.sin(2 * np.pi * 1800 * tb) * np.exp(-tb * 90)
+    cleaned = attenuate_sustained(y, sr)
+    chant_rms = float(np.sqrt(np.mean(cleaned[: sr // 2] ** 2)))
+    kick_rms = float(np.sqrt(np.mean(cleaned[i0 : i0 + burst] ** 2)))
+    assert kick_rms > chant_rms * 4
 
 
 def test_detect_synthetic_kick(tmp_path: Path):

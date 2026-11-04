@@ -74,6 +74,18 @@ def load_annotations_csv(path: str | Path) -> pd.DataFrame:
     return df
 
 
+def _is_blank(value: Any) -> bool:
+    """True for missing CSV cells. A Pass spot from SoccerNet has no verdict."""
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip().lower() in {"", "nan", "none", "null"}
+
+
 def _norm_decision(value: str) -> str:
     v = str(value).strip().lower()
     if v in {"offside", "off", "1", "true", "yes"}:
@@ -172,10 +184,10 @@ def classify_error_sources(
     fps: float,
     audio_confidence: float | None = None,
     notes: str = "",
+    score_decision: bool = True,
 ) -> list[ErrorSourceRow]:
     """Heuristic error taxonomy for the paper's qualitative table."""
     rows: list[ErrorSourceRow] = []
-    gt_d = _norm_decision(gt_decision)
     if pred_frame is None:
         rows.append(ErrorSourceRow(clip_id, "pass_detection_miss", "no predicted pass frame"))
     else:
@@ -196,6 +208,11 @@ def classify_error_sources(
                         f"conf={audio_confidence:.2f} (crowd / weak impact?)",
                     )
                 )
+    if not score_decision:
+        if notes:
+            rows.append(ErrorSourceRow(clip_id, "annotator_note", notes))
+        return rows
+    gt_d = _norm_decision(gt_decision)
     if pred_decision is None:
         rows.append(ErrorSourceRow(clip_id, "decision_missing", "no predicted decision"))
     else:
@@ -253,17 +270,23 @@ def evaluate_annotations(
         data["fps"].astype(float),
     )
 
+    labeled_gt: list[str] = []
+    labeled_pred: list[str] = []
     gt_margins = []
     pred_margins = []
     for _, row in data.iterrows():
+        if _is_blank(row["gt_decision"]) or _is_blank(row[pred_decision_col]):
+            continue
+        labeled_gt.append(str(row["gt_decision"]))
+        labeled_pred.append(str(row[pred_decision_col]))
         g = row.get("gt_margin_m", np.nan)
         p = row.get(pred_margin_col, np.nan)
-        gt_margins.append(None if pd.isna(g) else float(g))
-        pred_margins.append(None if pd.isna(p) else float(p))
+        gt_margins.append(None if _is_blank(g) else float(g))
+        pred_margins.append(None if _is_blank(p) else float(p))
 
     decision_metrics = compute_decision_metrics(
-        data["gt_decision"],
-        data[pred_decision_col],
+        labeled_gt,
+        labeled_pred,
         gt_margins,
         pred_margins,
     )
@@ -272,20 +295,40 @@ def evaluate_annotations(
     per_clip = []
     for _, row in data.iterrows():
         conf = row.get(audio_conf_col, None)
-        if conf is not None and not pd.isna(conf):
-            conf_f = float(conf)
-        else:
+        conf_f: float | None
+        if _is_blank(conf):
             conf_f = None
+        else:
+            try:
+                conf_f = float(conf)
+            except (TypeError, ValueError):
+                conf_f = None
+        gt_blank = _is_blank(row["gt_decision"])
+        pred_frame = (
+            int(row[pred_pass_col]) if not pd.isna(row[pred_pass_col]) else None
+        )
+        pred_decision = (
+            None if _is_blank(row[pred_decision_col]) else str(row[pred_decision_col])
+        )
         errs = classify_error_sources(
             str(row["clip_id"]),
             int(row["gt_pass_frame"]),
-            int(row[pred_pass_col]) if not pd.isna(row[pred_pass_col]) else None,
-            str(row["gt_decision"]),
-            str(row[pred_decision_col]) if not pd.isna(row[pred_decision_col]) else None,
+            pred_frame,
+            "" if gt_blank else str(row["gt_decision"]),
+            pred_decision,
             float(row["fps"]),
             audio_confidence=conf_f,
             notes=str(row.get("notes", "") or ""),
+            score_decision=not gt_blank,
         )
+        if gt_blank:
+            errs.append(
+                ErrorSourceRow(
+                    str(row["clip_id"]),
+                    "decision_unlabeled",
+                    "no onside/offside ground truth (Pass spot only)",
+                )
+            )
         errors.extend(errs)
         per_clip.append(
             {
@@ -293,8 +336,10 @@ def evaluate_annotations(
                 "gt_pass_frame": int(row["gt_pass_frame"]),
                 "pred_pass_frame": int(row[pred_pass_col]),
                 "frame_error": int(row[pred_pass_col]) - int(row["gt_pass_frame"]),
-                "gt_decision": _norm_decision(row["gt_decision"]),
-                "pred_decision": _norm_decision(row[pred_decision_col]),
+                "gt_decision": "" if gt_blank else _norm_decision(row["gt_decision"]),
+                "pred_decision": ""
+                if pred_decision is None
+                else _norm_decision(pred_decision),
             }
         )
 

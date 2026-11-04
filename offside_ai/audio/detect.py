@@ -41,6 +41,9 @@ class AudioPassConfig:
     snr_floor_db: float = 3.0
     # If peak prominence is weak vs noise floor, flag low confidence
     low_confidence_below: float = 0.45
+    # Drop energy that stays put (chants, whistle). A kick is a short burst.
+    suppress_crowd: bool = True
+    crowd_sustain_s: float = 0.18
 
 
 @dataclass
@@ -91,6 +94,44 @@ def bandpass_filter(
     if len(y) < 32:
         return y.astype(np.float64)
     return sosfiltfilt(sos, y.astype(np.float64))
+
+
+def attenuate_sustained(
+    y: np.ndarray,
+    sr: int,
+    sustain_s: float = 0.18,
+    n_fft: int = 1024,
+    hop_length: int = 256,
+) -> np.ndarray:
+    """Turn down sounds that last longer than a kick, such as a chant.
+
+    A median over ``sustain_s`` keeps the steady part of each frequency.
+    Subtracting it leaves the short impacts.
+    """
+    if y.size < sr // 5:
+        return y.astype(np.float64)
+    spectrum = librosa.stft(y.astype(np.float64), n_fft=n_fft, hop_length=hop_length)
+    magnitude = np.abs(spectrum)
+    width = max(3, int(round(sustain_s * sr / hop_length)))
+    if width % 2 == 0:
+        width += 1
+    if width >= magnitude.shape[1]:
+        return y.astype(np.float64)
+    from scipy.ndimage import median_filter
+
+    sustained = median_filter(magnitude, size=(1, width))
+    impact = np.maximum(magnitude - sustained, 0.0)
+    cleaned = spectrum * (impact / (magnitude + 1e-8))
+    out = librosa.istft(cleaned, hop_length=hop_length, length=len(y))
+    return np.asarray(out, dtype=np.float64)
+
+
+def prepare_impact_audio(y: np.ndarray, sr: int, cfg: AudioPassConfig) -> np.ndarray:
+    """Band-limit, then quiet the chant before onset detection."""
+    filtered = bandpass_filter(y, sr, cfg.bandpass_hz[0], cfg.bandpass_hz[1])
+    if not cfg.suppress_crowd:
+        return filtered
+    return attenuate_sustained(filtered, sr, sustain_s=cfg.crowd_sustain_s)
 
 
 def compute_spectrogram_db(
@@ -226,7 +267,7 @@ def detect_pass_from_audio(
             fps = 25.0
 
     y, sr = librosa.load(str(wav_path), sr=cfg.sample_rate, mono=True)
-    y_bp = bandpass_filter(y, sr, cfg.bandpass_hz[0], cfg.bandpass_hz[1])
+    y_bp = prepare_impact_audio(y, sr, cfg)
 
     S_db, S_times, S_freqs = compute_spectrogram_db(
         y_bp, sr, n_fft=cfg.n_fft, hop_length=cfg.hop_length

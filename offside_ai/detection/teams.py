@@ -74,6 +74,12 @@ def assign_teams_by_jersey_color(
         hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
         features.append(hsv.reshape(-1, 3).mean(axis=0))
     X = np.asarray(features, dtype=np.float64)
+    spread = X.max(axis=0) - X.min(axis=0) if len(X) else np.zeros(3)
+    if np.all(spread < 8):
+        for i in indices:
+            preset = result.boxes[i].team_id
+            team_of[i] = 0 if preset is None else int(preset)
+        return TeamAssignment(team_of, centroids, manual_overrides)
 
     k = min(n_teams, len(indices))
     if k <= 1:
