@@ -1,0 +1,6 @@
+# Google Colab (free GPU): install after choosing a torch build that matches the runtime CUDA.
+-r requirements.txt
+transformers>=4.40
+ultralytics>=8.0
+# RF-DETR (Apache-2.0). If install fails on Colab, fall back to --detector yolo.
+rfdetr>=1.0.0

@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenSAOT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0&amp;display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { sans: ["Manrope", "ui-sans-serif", "sans-serif"] } } }
+    };
+  </script>
+  <style>
+    body { font-family: Manrope, ui-sans-serif, sans-serif; }
+    .material-symbols-outlined { font-size: 18px; line-height: 1; vertical-align: middle; }
+    [hidden] { display: none !important; }
+    .live-dot { display: none; }
+    body.listening .live-dot { display: inline-block; animation: pulse 1.6s ease-out infinite; }
+    @keyframes pulse {
+      70% { box-shadow: 0 0 0 6px rgba(217, 45, 32, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(217, 45, 32, 0); }
+    }
+    video:not([src]) { display: none; }
+    #playhead::before {
+      content: ""; position: absolute; top: 0; left: -5px;
+      border-left: 5px solid transparent; border-right: 5px solid transparent;
+      border-top: 7px solid #d92d20;
+    }
+  </style>
+</head>
+<body class="grid h-screen grid-rows-[64px_minmax(0,1fr)_248px] overflow-hidden bg-[#ffffff] font-sans text-[#161616]">
+  <header class="flex min-w-0 items-center gap-5 border-b border-[#e8e8e8] bg-[#ffffff] px-5">
+    <div class="flex shrink-0 flex-col justify-center leading-tight">
+      <span class="text-[15px] font-semibold tracking-tight">OpenSAOT</span>
+      <span class="text-[11px] text-[#6f6f6f]">Semiautomatic VAR</span>
+    </div>
+    <div class="flex shrink-0 items-center gap-2">
+      <span class="live-dot h-2 w-2 shrink-0 rounded-full bg-[#d92d20] shadow-[0_0_0_0_rgba(217,45,32,0.45)]" aria-hidden="true"></span>
+      <span id="status" class="max-w-[220px] truncate text-[13px] text-[#6f6f6f]">Sin clip</span>
+    </div>
+    <div class="flex min-w-0 flex-1 items-center justify-end gap-3.5">
+      <span id="clock" class="border-r border-[#e8e8e8] pr-3.5 text-[15px] tabular-nums tracking-wide">00:00:00.00</span>
+      <div class="flex items-center gap-1.5">
+        <button id="play" type="button" class="inline-flex items-center gap-1 rounded-full border border-[#e8e8e8] bg-[#ffffff] px-3 py-1.5 text-[13px] hover:bg-[#f6f6f6]">
+          <span class="material-symbols-outlined ic">play_arrow</span><span class="lb">Reproducir</span>
+        </button>
+        <button id="live" type="button" class="inline-flex items-center gap-1 rounded-full border border-[#161616] bg-[#161616] px-3 py-1.5 text-[13px] text-white hover:bg-[#2a2a2a]">
+          <span class="material-symbols-outlined ic">sensors</span><span class="lb">En vivo</span>
+        </button>
+        <button id="follow" type="button" hidden class="inline-flex items-center gap-1 rounded-full border border-[#e8e8e8] bg-[#ffffff] px-3 py-1.5 text-[13px] hover:bg-[#f6f6f6]">
+          <span class="material-symbols-outlined ic">skip_next</span><span class="lb">Seguir el directo</span>
+        </button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <input id="url" type="url" placeholder="URL del directo" class="w-[148px] min-w-[88px] shrink rounded-full border border-[#e8e8e8] bg-[#ffffff] px-3 py-1.5 text-[13px] outline-none placeholder:text-[#a3a3a3]" />
+        <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-[#e8e8e8] bg-[#ffffff] px-3 py-1.5 text-[13px] hover:bg-[#f6f6f6]">
+          <span class="material-symbols-outlined">folder_open</span>Abrir
+          <input id="file" type="file" accept="video/*,.mkv,.mp4,.mov,.webm" hidden />
+        </label>
+        <button id="demo" type="button" class="inline-flex items-center gap-1 rounded-full border border-[#e8e8e8] bg-[#ffffff] px-3 py-1.5 text-[13px] hover:bg-[#f6f6f6]">
+          <span class="material-symbols-outlined">movie</span>Ejemplo
+        </button>
+      </div>
+    </div>
+  </header>
+  <main class="grid min-h-0 grid-cols-[300px_minmax(0,1fr)] overflow-hidden">
+    <aside class="min-h-0 overflow-auto border-r border-[#e8e8e8] px-3 pb-2 pt-3.5">
+      <h2 class="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f6f6f]">Eventos</h2>
+      <p id="hint" class="mb-2 text-[11px] leading-snug text-[#6f6f6f]">Pulsa un evento para parar el vídeo en ese fotograma y ver a los jugadores.</p>
+      <div class="mb-2 grid grid-cols-2 gap-1.5 text-[12px]">
+        <label class="flex flex-col gap-0.5">
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-[#6f6f6f]">Ataca</span>
+          <select id="attack-team" class="rounded-lg border border-[#e8e8e8] bg-[#ffffff] px-2 py-1">
+            <option value="0">Equipo A</option>
+            <option value="1">Equipo B</option>
+          </select>
+        </label>
+        <label class="flex flex-col gap-0.5">
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-[#6f6f6f]">En pantalla</span>
+          <select id="attack-dir" class="rounded-lg border border-[#e8e8e8] bg-[#ffffff] px-2 py-1">
+            <option value="positive_x">Hacia la derecha</option>
+            <option value="negative_x">Hacia la izquierda</option>
+          </select>
+        </label>
+      </div>
+      <ul id="events" class="flex list-none flex-col gap-px p-0"></ul>
+    </aside>
+    <section id="preview" class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#f3f3f3]">
+      <div id="stage" class="relative min-h-0 flex-1">
+        <video id="player" class="absolute inset-0 z-[1] h-full w-full bg-[#f3f3f3] object-contain" playsinline></video>
+        <canvas id="layer" class="pointer-events-none absolute inset-0 z-[2] h-full w-full"></canvas>
+        <div id="empty" class="absolute inset-0 z-[3] grid place-items-center px-7 text-center text-sm leading-relaxed text-[#6f6f6f]">
+          <div>
+            <strong class="font-semibold text-[#161616]">Abre un clip o sigue un directo.</strong><br />
+            El espectrograma ocupa la pista de audio.<br />
+            Cada detección queda en Eventos.
+            <div id="local" class="mt-4 flex flex-col items-center gap-2"></div>
+          </div>
+        </div>
+      </div>
+      <div id="legend" class="hidden items-center justify-between gap-2 border-t border-[#e8e8e8] bg-[#ffffff] px-4 py-1.5 text-xs text-[#161616]">
+        <span class="inline-flex items-center whitespace-nowrap"><i class="mr-1.5 inline-block h-2 w-2 rounded-sm bg-[#2563eb]"></i>Equipo A</span>
+        <span class="inline-flex items-center whitespace-nowrap"><i class="mr-1.5 inline-block h-2 w-2 rounded-sm bg-[#ea580c]"></i>Equipo B</span>
+        <span class="inline-flex items-center whitespace-nowrap"><i class="mr-1.5 inline-block h-2 w-2 rounded-sm bg-[#111]"></i>Árbitro</span>
+        <span class="inline-flex items-center whitespace-nowrap"><i class="mr-1.5 inline-block h-2 w-2 rounded-full bg-[#ffffff] shadow-[inset_0_0_0_1.5px_#111]"></i>Balón</span>
+        <span class="inline-flex items-center whitespace-nowrap"><i class="mr-1.5 inline-block h-0.5 w-3.5 rounded-sm bg-[#15803d]"></i>Línea</span>
+      </div>
+    </section>
+  </main>
+  <footer id="timeline" class="relative grid min-h-0 select-none grid-rows-[32px_1fr] border-t border-[#e8e8e8] bg-[#ffffff]">
+    <div id="ruler" class="relative ml-[76px] border-b border-[#e8e8e8] text-[11px] tabular-nums text-[#6f6f6f]"></div>
+    <div id="lanes" class="relative min-h-0">
+      <div class="lane grid h-[34%] grid-cols-[76px_1fr] border-b border-[#e8e8e8]">
+        <em class="grid place-items-center justify-items-start pl-4 text-xs not-italic text-[#6f6f6f]">
+          <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">videocam</span>Vídeo</span>
+        </em>
+        <div class="track relative mx-3 my-2 overflow-hidden rounded-lg bg-[#f6f6f6]"><div id="clipbar" class="absolute inset-0 flex items-center px-3 text-xs text-[#6f6f6f]">—</div></div>
+      </div>
+      <div class="lane grid h-[66%] grid-cols-[76px_1fr] border-b border-[#e8e8e8]">
+        <em class="grid place-items-center justify-items-start pl-4 text-xs not-italic text-[#6f6f6f]">
+          <span class="inline-flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">graphic_eq</span>Audio</span>
+        </em>
+        <div class="track relative mx-3 my-2 overflow-hidden rounded-lg bg-[#f6f6f6]" id="audio-track">
+          <img id="spec" alt="Espectrograma del audio" class="absolute inset-y-0 left-0 hidden h-full w-full object-fill" />
+          <div id="markers" class="pointer-events-none absolute inset-0"></div>
+        </div>
+      </div>
+    </div>
+    <div id="playhead" class="pointer-events-none absolute bottom-0 left-[76px] top-0 hidden w-px bg-[#d92d20]"></div>
+  </footer>
+  <script>
+    const player = document.getElementById("player");
+    const clock = document.getElementById("clock");
+    const statusEl = document.getElementById("status");
+    const eventsEl = document.getElementById("events");
+    const markersEl = document.getElementById("markers");
+    const specEl = document.getElementById("spec");
+    const clipbar = document.getElementById("clipbar");
+    const ruler = document.getElementById("ruler");
+    const playhead = document.getElementById("playhead");
+    const empty = document.getElementById("empty");
+    const layer = document.getElementById("layer");
+    const legend = document.getElementById("legend");
+    const lanes = document.getElementById("lanes");
+    const liveBtn = document.getElementById("live");
+
+    let duration = 0;
+    let events = [];
+    let tracks = [];
+    let activeId = null;
+    let mediaId = "";
+    let sourcePath = "";
+    let liveId = "";
+    let liveSource = null;
+    let liveNow = 0;
+    let liveWindow = 8;
+    let liveMode = false;
+    let reviewing = false;
+    let reviewTime = 0;
+    let inspectGen = 0;
+    const followBtn = document.getElementById("follow");
+
+    function fmt(t) {
+      if (!Number.isFinite(t) || t < 0) t = 0;
+      const pad = (n) => String(n).padStart(2, "0");
+      const h = Math.floor(t / 3600);
+      const m = Math.floor((t % 3600) / 60);
+      const s = Math.floor(t % 60);
+      const cs = Math.floor((t % 1) * 100);
+      return pad(h) + ":" + pad(m) + ":" + pad(s) + "." + pad(cs);
+    }
+    function clockShort(t) {
+      const m = Math.floor(Math.max(t, 0) / 60);
+      const s = Math.floor(Math.max(t, 0) % 60);
+      return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+    function kindColor(kind) {
+      if (kind === "audio") return "#1d4ed8";
+      if (kind === "image") return "#0f766e";
+      if (kind === "pass") return "#b45309";
+      if (kind === "offside") return "#be123c";
+      return "#15803d";
+    }
+    function playSetup() {
+      const team = document.getElementById("attack-team");
+      const dir = document.getElementById("attack-dir");
+      return {
+        attacking_team_id: team ? Number(team.value) : 0,
+        attacking_direction: dir ? dir.value : "positive_x",
+      };
+    }
+    function labelBtn(id, icon, text) {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      const ic = btn.querySelector(".ic");
+      const lb = btn.querySelector(".lb");
+      if (ic) ic.textContent = icon;
+      if (lb) lb.textContent = text;
+    }
+
+    function seek(t) {
+      if (!player.src) return;
+      const limit = Number.isFinite(player.duration) ? player.duration : t;
+      player.currentTime = Math.min(Math.max(t, 0), Math.max(limit - 0.05, 0));
+      paintHead();
+    }
+
+    function liveLayout() {
+      const start = Math.max(0, liveNow - liveWindow);
+      const head = liveNow <= liveWindow ? liveNow / liveWindow : 1;
+      const specWidth = liveNow <= liveWindow ? Math.max(head, 0.02) : 1;
+      return { start, span: liveWindow, head, specWidth };
+    }
+
+    function visibleEvents() {
+      if (!liveMode || reviewing) return events;
+      const start = Math.max(0, liveNow - liveWindow);
+      return events.filter((ev) => ev.time_s >= start - 0.05 && ev.time_s <= liveNow + 0.05);
+    }
+
+    function shownTime() {
+      if (reviewing) return player.paused ? reviewTime : (player.currentTime || reviewTime);
+      if (liveMode) return liveNow;
+      return player.currentTime || 0;
+    }
+
+    function paintHead() {
+      const t = shownTime();
+      clock.textContent = fmt(t);
+      const track = lanes.querySelector(".track");
+      const width = track.getBoundingClientRect().width;
+      let ratio = 0;
+      if (liveMode && reviewing) {
+        const layout = liveLayout();
+        ratio = Math.min(1, Math.max(0, (t - layout.start) / layout.span));
+      } else if (liveMode) ratio = liveLayout().head;
+      else if (duration) ratio = t / duration;
+      playhead.style.display = "block";
+      playhead.style.transform = "translateX(" + (ratio * width) + "px)";
+      paintLayer();
+    }
+
+    function nearestTrack(t) {
+      let best = null;
+      let bestDt = 0.34;
+      for (const track of tracks) {
+        const dt = Math.abs((track.time_s || 0) - t);
+        if (dt <= bestDt) {
+          best = track;
+          bestDt = dt;
+        }
+      }
+      return best;
+    }
+
+    function paintLayer() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = layer.clientWidth;
+      const h = layer.clientHeight;
+      if (!w || !h) return;
+      if (layer.width !== Math.round(w * dpr) || layer.height !== Math.round(h * dpr)) {
+        layer.width = Math.round(w * dpr);
+        layer.height = Math.round(h * dpr);
+      }
+      const ctx = layer.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const t = shownTime();
+      const track = nearestTrack(t);
+      if (!track || !player.videoWidth) {
+        legend.style.display = "none";
+        return;
+      }
+      legend.style.display = "flex";
+      const scale = Math.min(w / player.videoWidth, h / player.videoHeight);
+      const dw = player.videoWidth * scale;
+      const dh = player.videoHeight * scale;
+      const ox = (w - dw) / 2;
+      const oy = (h - dh) / 2;
+      const px = (u) => ox + u * dw;
+      const py = (v) => oy + v * dh;
+      if (track.line && track.line.length > 1) {
+        ctx.beginPath();
+        track.line.forEach((pt, i) => {
+          const x = px(pt[0]);
+          const y = py(pt[1]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = track.offside ? "#be123c" : "#15803d";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      (track.boxes || []).forEach((box) => {
+        const x = px(box.x1);
+        const y = py(box.y1);
+        const bw = (box.x2 - box.x1) * dw;
+        const bh = (box.y2 - box.y1) * dh;
+        let color = "#2563eb";
+        let name = "Equipo A";
+        if (box.label === "ball") {
+          color = "#111111";
+          name = "Balón";
+        } else if (box.label === "referee") {
+          color = "#111111";
+          name = "Árbitro";
+        } else if (box.team === 1) {
+          color = "#ea580c";
+          name = box.label === "goalkeeper" ? "Portero B" : "Equipo B";
+        } else if (box.label === "goalkeeper") {
+          name = "Portero A";
+        }
+        if (box.offside) color = "#be123c";
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = color;
+        if (box.label === "ball") {
+          ctx.beginPath();
+          ctx.fillStyle = "#ffffff";
+          ctx.arc(x + bw / 2, y + bh / 2, Math.max(bw, bh) / 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, y, bw, bh);
+        }
+        ctx.font = "12px Avenir Next, Segoe UI, sans-serif";
+        const tw = ctx.measureText(name).width;
+        const ly = Math.max(oy, y - 16);
+        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        ctx.fillRect(x, ly, tw + 8, 15);
+        ctx.fillStyle = color;
+        ctx.fillText(name, x + 4, ly + 11);
+      });
+    }
+
+    function paintMarkers() {
+      markersEl.innerHTML = "";
+      const shown = visibleEvents();
+      const layout = liveMode ? liveLayout() : null;
+      const start = layout ? layout.start : 0;
+      const span = layout ? layout.span : duration;
+      shown.forEach((ev) => {
+        if (!span) return;
+        const flag = document.createElement("div");
+        flag.className = "absolute bottom-0 top-0 w-px cursor-pointer";
+        flag.style.left = ((ev.time_s - start) / span) * 100 + "%";
+        flag.style.background = kindColor(ev.kind);
+        flag.innerHTML = "<span class='absolute left-1.5 top-1.5 whitespace-nowrap rounded bg-white/90 px-1 text-[10px]'>" + ev.label + "</span>";
+        flag.addEventListener("click", (e) => { e.stopPropagation(); select(ev.id, true); });
+        markersEl.appendChild(flag);
+      });
+    }
+
+    function paintList() {
+      eventsEl.innerHTML = "";
+      const shown = liveMode ? events.slice().reverse() : events;
+      shown.forEach((ev) => {
+        const li = document.createElement("li");
+        li.dataset.id = ev.id;
+        li.title = ev.label + (ev.detail ? " · " + ev.detail : "");
+        const on = ev.id === activeId;
+        li.className = "grid min-w-0 cursor-pointer grid-cols-[62px_minmax(0,1fr)] items-center gap-2 rounded-lg border-l-2 px-2 py-1 " +
+          (on ? "bg-[#f4f4f4]" : "border-transparent hover:bg-[#f6f6f6]");
+        if (on) li.style.borderLeftColor = kindColor(ev.kind);
+        const stamp = clockShort(ev.time_s) + "." + String(Math.floor((ev.time_s % 1) * 100)).padStart(2, "0");
+        li.innerHTML = "<time class='text-xs tabular-nums text-[#6f6f6f]'>" + stamp + "</time><div class='min-w-0'><div class='truncate text-[13px] tracking-tight'><span class='mr-1 inline-block h-1.5 w-1.5 -translate-y-px rounded-full' style='background:" + kindColor(ev.kind) + "'></span>" +
+          ev.label + "</div><div class='mt-px truncate text-[11px] text-[#6f6f6f]'>" + (ev.detail || "") + "</div></div>";
+        li.addEventListener("click", () => select(ev.id, true));
+        eventsEl.appendChild(li);
+      });
+      if (!shown.length) {
+        eventsEl.innerHTML = "<li class='px-2 py-1 text-[11px] text-[#6f6f6f]'>Todavía no hay un golpe.</li>";
+      }
+    }
+
+    function paintRuler() {
+      ruler.innerHTML = "";
+      const layout = liveMode ? liveLayout() : null;
+      const start = layout ? layout.start : 0;
+      const span = layout ? layout.span : duration;
+      if (!span) return;
+      const step = span > 20 ? span / 6 : 1;
+      const count = Math.max(1, Math.round(span / step));
+      for (let i = 0; i <= count; i++) {
+        const s = document.createElement("span");
+        const t = Math.min(start + span, start + i * step);
+        s.textContent = clockShort(t);
+        s.className = "absolute top-[9px] " + (i === count ? "-translate-x-full" : "-translate-x-1/2");
+        s.style.left = ((t - start) / span) * 100 + "%";
+        ruler.appendChild(s);
+      }
+    }
+
+    function render(data) {
+      stopLive(false);
+      liveMode = false;
+      reviewing = false;
+      followBtn.hidden = true;
+      duration = data.duration_s || 0;
+      events = data.events || [];
+      tracks = data.tracks || [];
+      mediaId = data.media_id || "";
+      player.src = data.video_url || "";
+      empty.style.display = "none";
+      clipbar.textContent = data.name || "Clip";
+      specEl.src = data.spectrogram ? "data:image/png;base64," + data.spectrogram : "";
+      specEl.style.display = data.spectrogram ? "block" : "none";
+      statusEl.textContent = data.note || "Listo";
+      document.body.classList.remove("listening");
+      labelBtn("live", "sensors", "En vivo");
+      paintRuler();
+      paintList();
+      paintMarkers();
+      paintHead();
+    }
+
+    function select(id, doSeek) {
+      activeId = id;
+      const ev = events.find((item) => item.id === id);
+      paintList();
+      if (!(ev && doSeek)) return;
+      reviewing = true;
+      reviewTime = ev.time_s;
+      player.pause();
+      seek(ev.time_s);
+      followBtn.hidden = !liveMode;
+      statusEl.textContent = "Pausado en " + fmt(ev.time_s);
+      inspectFrame(ev);
+    }
+
+    async function inspectFrame(ev) {
+      const gen = ++inspectGen;
+      if (!mediaId) {
+        paintLayer();
+        return;
+      }
+      statusEl.textContent = "Leyendo jugadores…";
+      const res = await fetch("/api/inspect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ media: mediaId, time_s: ev.time_s }, playSetup())),
+      });
+      if (gen !== inspectGen) return;
+      if (!res.ok) {
+        statusEl.textContent = (await res.text()).slice(0, 180) || "No se pudo leer el frame";
+        paintLayer();
+        return;
+      }
+      const data = await res.json();
+      if (data.overlay && data.overlay.boxes && data.overlay.boxes.length) {
+        tracks = tracks.filter((track) => Math.abs(track.time_s - ev.time_s) > 0.2);
+        tracks.push(data.overlay);
+      }
+      statusEl.textContent = "Pausado en " + fmt(ev.time_s);
+      paintLayer();
+    }
+
+    async function loadResponse(res) {
+      if (!res.ok) {
+        statusEl.textContent = (await res.text()).slice(0, 180) || "No se pudo leer el clip";
+        return;
+      }
+      render(await res.json());
+    }
+
+    function applyTick(msg) {
+      liveNow = msg.time_s || 0;
+      liveWindow = msg.window_s || 8;
+      if (msg.spectrogram && !reviewing) {
+        const layout = liveLayout();
+        specEl.src = "data:image/png;base64," + msg.spectrogram;
+        specEl.style.display = "block";
+        specEl.style.left = "0";
+        specEl.style.width = (layout.specWidth * 100) + "%";
+      }
+      if (!reviewing && player.src && Math.abs((player.currentTime || 0) - liveNow) > 0.45) {
+        player.currentTime = liveNow;
+      }
+      if (!reviewing && player.paused) player.play().catch(() => {});
+      paintRuler();
+      paintMarkers();
+      paintHead();
+    }
+
+    function applyEvent(ev) {
+      events.push(ev);
+      if (ev.overlay) tracks.push(ev.overlay);
+      activeId = ev.id;
+      paintList();
+      paintMarkers();
+      statusEl.textContent = ev.label;
+    }
+
+    async function startLive(body) {
+      stopLive(false);
+      statusEl.textContent = "Conectando…";
+      const res = await fetch("/api/live", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        statusEl.textContent = (await res.text()).slice(0, 180);
+        return;
+      }
+      const info = await res.json();
+      liveId = info.id;
+      mediaId = info.media_id || mediaId;
+      liveMode = true;
+      reviewing = false;
+      followBtn.hidden = true;
+      events = [];
+      tracks = [];
+      liveNow = 0;
+      empty.style.display = info.video_url ? "none" : "none";
+      if (info.video_url) player.src = info.video_url;
+      clipbar.textContent = info.name || "Directo";
+      document.body.classList.add("listening");
+      labelBtn("live", "stop", "Parar");
+      statusEl.textContent = "Escuchando";
+      paintList();
+      liveSource = new EventSource("/api/live/" + liveId);
+      liveSource.onmessage = (message) => {
+        const data = JSON.parse(message.data);
+        if (data.type === "tick") applyTick(data);
+        else if (data.type === "event") applyEvent(data.event);
+        else if (data.type === "done") {
+          if (!reviewing) statusEl.textContent = "Fin del flujo";
+          document.body.classList.remove("listening");
+          labelBtn("live", "sensors", "En vivo");
+          followBtn.hidden = true;
+          liveMode = false;
+          duration = Number.isFinite(player.duration) ? player.duration : liveNow;
+          liveSource.close();
+          liveSource = null;
+          paintRuler();
+          paintHead();
+        } else if (data.type === "error") {
+          statusEl.textContent = data.message || "Error en el directo";
+        }
+      };
+    }
+
+    function stopLive(tell) {
+      if (liveSource) { liveSource.close(); liveSource = null; }
+      if (tell && liveId) {
+        fetch("/api/live-stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: liveId }),
+        });
+      }
+      liveId = "";
+      document.body.classList.remove("listening");
+      labelBtn("live", "sensors", "En vivo");
+    }
+
+    document.getElementById("file").addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      statusEl.textContent = "Analizando audio…";
+      sourcePath = "";
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "X-Filename": file.name },
+        body: file,
+      });
+      await loadResponse(res);
+    });
+    document.getElementById("demo").addEventListener("click", async () => {
+      statusEl.textContent = "Preparando ejemplo…";
+      await loadResponse(await fetch("/api/demo", { method: "POST" }));
+    });
+    document.getElementById("play").addEventListener("click", () => {
+      if (!player.src) return;
+      if (reviewing) {
+        if (player.paused) player.play();
+        else player.pause();
+        return;
+      }
+      if (player.paused) player.play();
+      else player.pause();
+    });
+    followBtn.addEventListener("click", () => {
+      reviewing = false;
+      inspectGen += 1;
+      followBtn.hidden = true;
+      statusEl.textContent = liveMode ? "Escuchando" : "Listo";
+      if (liveMode) {
+        player.currentTime = liveNow;
+        player.play().catch(() => {});
+      }
+      paintHead();
+    });
+    ["attack-team", "attack-dir"].forEach((id) => {
+      document.getElementById(id).addEventListener("change", () => {
+        if (!activeId) return;
+        const ev = events.find((item) => item.id === activeId);
+        if (ev) inspectFrame(ev);
+      });
+    });
+    player.addEventListener("play", () => labelBtn("play", "pause", "Pausa"));
+    player.addEventListener("pause", () => labelBtn("play", "play_arrow", "Reproducir"));
+    liveBtn.addEventListener("click", () => {
+      if (liveId) { stopLive(true); statusEl.textContent = "En pausa"; return; }
+      const url = document.getElementById("url").value.trim();
+      const setup = playSetup();
+      if (url) startLive(Object.assign({ url, pace: 1 }, setup));
+      else if (mediaId) startLive(Object.assign({ media: mediaId, pace: 1 }, setup));
+      else if (sourcePath) startLive(Object.assign({ path: sourcePath, pace: 1 }, setup));
+      else statusEl.textContent = "Abre un clip o pega una URL";
+    });
+
+    lanes.addEventListener("click", (e) => {
+      if (liveMode) return;
+      const track = e.target.closest(".track");
+      if (!track || !duration) return;
+      const rect = track.getBoundingClientRect();
+      seek(((e.clientX - rect.left) / rect.width) * duration);
+    });
+    player.addEventListener("timeupdate", () => { if (!liveMode || reviewing) paintHead(); });
+    player.addEventListener("seeked", () => { if (!liveMode || reviewing) paintHead(); });
+    player.addEventListener("loadedmetadata", () => paintLayer());
+    window.addEventListener("resize", () => paintLayer());
+    document.addEventListener("keydown", (e) => {
+      if (e.code !== "Space" || e.target.matches("input, textarea")) return;
+      e.preventDefault();
+      if (player.paused) player.play();
+      else player.pause();
+    });
+
+    fetch("/api/clips").then((r) => r.json()).then((clips) => {
+      const box = document.getElementById("local");
+      clips.forEach((clip) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "max-w-[340px] truncate rounded-full border border-[#e8e8e8] bg-[#ffffff] px-3 py-1.5 text-[13px] hover:bg-[#f6f6f6]";
+        b.textContent = clip.label;
+        b.addEventListener("click", () => {
+          sourcePath = clip.path;
+          startLive(Object.assign({ path: clip.path, pace: 1 }, playSetup()));
+        });
+        box.appendChild(b);
+      });
+    }).catch(() => {});
+  </script>
+</body>
+</html>
